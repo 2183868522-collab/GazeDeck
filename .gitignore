@@ -1,0 +1,51 @@
+# Local environments, packages and build products
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+target/
+dist/
+.DS_Store
+Thumbs.db
+
+# Credentials and machine configuration
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+*.p12
+.soundcraft-loop.json
+.vscode/
+.idea/
+
+# Local recordings, imported audio and exported personal profiles
+recordings/
+captures/
+personal-data/
+private-data/
+exports/
+soundcraft-song-library/
+*.scraft
+*.wav
+*.mp3
+*.flac
+*.ogg
+*.m4a
+*.mp4
+*.webm
+*.mov
+*.avi
+*profile-export*.json
+gazedeck-quick-model-*.json
+
+# Temporary work and prior snapshots
+work/
+_backup*/
+*.log
+*.tmp
+*.bak
+*.zip
+!soundcraft-runtime/deck-live-load-20261108/source.zip

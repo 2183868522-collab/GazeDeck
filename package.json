@@ -1,0 +1,6 @@
+{
+  "name": "eye-gesture-control",
+  "private": true,
+  "type": "module",
+  "scripts": { "test": "node --test \"tests/*.test.js\" \"tests/*.test.mjs\"" }
+}

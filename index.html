@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>眼动手势控制 · 原型</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="gazedeck.css">
+  <link rel="stylesheet" href="gazedeck-advanced.css">
+  <link rel="stylesheet" href="gazemix-blocks.css">
+</head>
+<body>
+  <header>
+    <h1>眼动手势控制 <small>原型 v0.4</small></h1>
+    <label class="user-pick">当前用户 <select id="userSelect"></select></label>
+    <button id="newUser">＋ 新用户</button>
+    <button id="quickLaunch" class="primary">快捷体验</button>
+    <span id="status" class="pill">正在加载模型…</span>
+    <span id="pausePill" class="pill hidden">已暂停</span>
+    <span id="fpsPill" class="pill muted">— fps</span>
+    <label class="language-switch"><span>语言</span><select data-language-select>
+      <option value="zh-CN" data-i18n-skip>简体中文</option><option value="en" data-i18n-skip>English</option>
+    </select></label>
+  </header>
+
+  <div id="captureHud" class="capture-hud hidden" aria-live="polite">
+    <div class="capture-hud-copy">
+      <strong id="captureTitle">采集中</strong>
+      <span id="captureProgressText"></span>
+    </div>
+    <div class="capture-hud-track"><div id="captureProgressBar"></div></div>
+    <button id="captureStop" class="danger hidden">取消本次录入</button>
+  </div>
+
+  <section id="gazeSliderOverlay" class="gaze-slider-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="gazeSliderTitle">
+    <div class="gaze-slider-heading">
+      <div><span class="eyebrow">连续控制</span><h2 id="gazeSliderTitle">音量</h2></div>
+    </div>
+    <div class="gaze-zones" aria-hidden="true">
+      <span>◀ 减少</span><span>中央停止</span><span>增加 ▶</span>
+    </div>
+    <div class="gaze-value-track"><div id="gazeSliderFill"></div><i id="gazeSliderThumb"></i><strong id="gazeSliderValue" class="gaze-slider-thumb-value">70%</strong></div>
+    <ol id="gazeTrackList" class="gaze-track-list hidden" aria-label="可选曲目"></ol>
+    <p id="gazeSliderState" class="gaze-slider-state">请先看中央</p>
+    <p id="gazeSliderHelp" class="muted">向左看减少，向右看增加，回到中央停止。</p>
+    <div class="gaze-slider-buttons">
+      <button id="cancelGazeSlider">上看 · 恢复打开时原值</button>
+      <button id="confirmGazeSlider" class="primary">下看 · 保留并关闭</button>
+    </div>
+  </section>
+
+  <main>
+    <section class="left">
+      <div class="row camera-row">
+        <label>摄像头
+          <select id="cameraSelect"><option value="">正在读取摄像头列表…</option></select>
+        </label>
+        <button id="refreshCameras" type="button">刷新设备列表</button>
+        <button id="startCamera" class="primary">启动摄像头</button>
+        <label class="file-btn">或打开视频文件<input id="videoFile" type="file" accept="video/*"></label>
+        <span id="cameraListInfo" class="muted" role="status"></span>
+      </div>
+
+      <div class="stage">
+        <video id="video" playsinline muted></video>
+        <canvas id="overlay"></canvas>
+        <div id="prompt" class="prompt hidden"></div>
+        <div id="flash" class="flash"></div>
+        <div id="noFace" class="noface hidden">未检测到人脸</div>
+          <div id="faceGuide" class="face-guide hidden" aria-live="polite">
+            <svg viewBox="0 0 420 540" aria-hidden="true">
+              <path class="guide-target" d="M210 18C103 18 28 92 28 205c0 115 76 195 182 195s182-80 182-195C392 92 317 18 210 18Z"/>
+              <path class="guide-head" d="M210 43C118 43 62 105 62 203c0 75 28 134 82 166 14 25 39 39 66 39s52-14 66-39c54-32 82-91 82-166 0-98-56-160-148-160Z"/>
+              <path class="guide-ears" d="M64 205c-31-20-42 1-32 32 7 22 19 34 37 33m281-65c31-20 42 1 32 32-7 22-19 34-37 33"/>
+              <path class="guide-features" d="M126 202c17-13 38-13 55 0m58 0c17-13 38-13 55 0M128 220c13 11 31 11 44 0m76 0c13 11 31 11 44 0m-72-3c-3 25-9 48-17 67 11 9 25 9 36 0m-65 42c20 20 43 30 66 30s46-10 66-30M210 62v16"/>
+              <path class="guide-shoulders" d="M52 526c15-75 68-112 158-112s143 37 158 112"/>
+            </svg>
+            <strong id="faceGuideText"></strong>
+          </div>
+          <div id="lightingWarning" class="lighting-warning hidden" role="status" aria-live="polite"></div>
+      </div>
+
+      <div class="meter-block">
+        <div class="meter-label">活跃度 <span id="activityValue">0.0</span> <span id="segState" class="muted"></span></div>
+        <div class="meter"><div id="activityBar"></div><i id="offMark"></i><i id="onMark"></i></div>
+      </div>
+      <div id="featureBars" class="feature-bars"></div>
+
+      <h3>识别记录</h3>
+      <ol id="log" class="log"></ol>
+    </section>
+
+    <section class="right">
+      <nav class="tabs">
+        <button data-tab="train" class="active">① 校准与录制</button>
+        <button data-tab="eval">② 评估</button>
+        <button data-tab="board">③ 沟通板</button>
+        <button data-tab="music">④ 节拍伴奏</button>
+        <button data-tab="settings">⑤ 设置</button>
+        <button data-tab="test">⑥ 测试与改进</button>
+        <button data-tab="gazedeck">⑦ GazeDeck 进阶控制</button>
+        <button data-tab="quick">⑧ 快捷体验</button>
+      </nav>
+
+      <div id="tab-train" class="tab active">
+        <p class="hint">识别只在「③ 沟通板」「④ 节拍伴奏」「⑦ GazeDeck 进阶控制」触发操作；在本页可以放心录制。</p>
+        <h3>第 1 步 · 静息校准</h3>
+        <p>请病人放松、看着屏幕中央 5 秒，期间可以自然眨眼。换了环境（光线、坐姿、眼镜）时重做一次。</p>
+        <button id="calibrate" class="primary">开始静息校准</button>
+        <span id="baselineInfo" class="muted"></span>
+        <div class="row">
+          <label>校准环境 <select id="baselineSelect" aria-label="选择历史校准环境"></select></label>
+          <button id="restoreRecordedBaseline" class="hidden">恢复有样本的历史环境</button>
+        </div>
+        <p id="baselineRecoveryInfo" class="hint hidden" role="status"></p>
+        <div id="pendingBaselinePanel" class="gaze-calibration-card hidden">
+          <p id="pendingBaselineInfo"></p>
+          <div class="row">
+            <button id="keepCurrentBaseline" class="primary">继续使用原环境与样本</button>
+            <button id="activatePendingBaseline">启用新环境（需重新录制）</button>
+          </div>
+        </div>
+
+        <div class="gaze-calibration-card">
+          <h3>第 2 步 · 个性化眼动校准</h3>
+          <p>系统会记录眼部开合比例作为参考，并根据五方向的实际眼动范围与静止波动，保守调整各轴起始灵敏度。眼睛形状不会单独触发放大；信号偏弱时不会放大噪声，也不会改变全局活跃度阈值。建议录入样本前完成；可以跳过并使用默认参数。</p>
+          <p class="eye-calibration-instruction">请保持头部自然稳定，视线朝目标方向移动到可舒适保持的最远位置。</p>
+          <p class="muted">倒数和注视保持时间可在「⑤ 设置 → 校准节奏」中分别调整。</p>
+          <div class="row">
+            <button id="calibrateGaze" class="primary">开始五方向校准</button>
+          </div>
+          <p id="personalCalibrationInfo" class="muted" aria-live="polite">尚未校准 · 依次看中央、左、右、上、下；四个方向各重复两次短暂保持。</p>
+        </div>
+
+        <h3>第 3 步 · 录制动作样本</h3>
+        <p>每类动作建议录 5–10 次。点「录」后有 3 秒倒数，看到「现在：…」时做动作。<b>「自然」</b>类录的是平时不经意的眨眼和扫视——它就是防误触的关键，务必录。</p>
+        <p id="sampleArchiveInfo" class="hint" role="status"></p>
+        <table class="gesture-table">
+          <thead><tr><th>动作</th><th>已保存样本（当前环境）</th><th></th></tr></thead>
+          <tbody id="gestureRows"></tbody>
+        </table>
+        <div class="row">
+          <input id="newGesture" placeholder="新动作名称，如：右眼单眨" maxlength="12">
+          <button id="addGesture">添加动作</button>
+        </div>
+        <div class="gaze-calibration-card" id="sliderCalibrationCard">
+          <h3>第 4 步 · 视线滑块校准与试用</h3>
+          <p>保持头部自然稳定，依次注视左、中央、右侧的蓝色目标点，录制滑块的左右标尺。此校准独立于五方向个性化校准，不改变已录制的动作样本。</p>
+          <p class="muted">如果目标切换太快，可在「⑤ 设置 → 校准节奏」放慢滑块校准。</p>
+          <div class="row">
+            <button id="calibrateSlider" class="primary">录制滑块左右标尺</button>
+            <button id="tryGazeSlider">试用音量滑块</button>
+            <button id="tryTrackPicker">试用曲目选择滑块</button>
+          </div>
+          <p id="gazeCalibrationInfo" class="muted">视线滑块尚未校准</p>
+          <p class="muted">曲目选择与音量滑块共用左右标尺及确认方式；请先在「④ 节拍伴奏」添加音频，最多 5 首，每首对应 20 个刻度。</p>
+        </div>
+      </div>
+
+      <div id="tab-gazedeck" class="tab"></div>
+
+      <div id="tab-quick" class="tab">
+        <div class="quick-shell">
+          <div class="quick-heading">
+            <div><span class="eyebrow">GazeDeck · 通用识别</span><h2>快捷体验</h2><p>无需先录制个人动作样本；启动摄像头后自动建立短暂静息基线。</p></div>
+            <div class="quick-model-badge"><span>当前模型</span><strong id="quickModelName">正在加载…</strong><small id="quickModelMeta"></small></div>
+          </div>
+          <div id="quickCameraSlot" class="quick-camera-slot"></div>
+          <div id="quickCameraControls" class="quick-camera-controls"></div>
+          <p id="quickCameraStatus" class="quick-camera-status" role="status">正在准备快捷体验…</p>
+          <div class="quick-live-result" aria-live="polite">
+            <span>实时识别</span><strong id="quickPrediction" data-state="rest">等待动作</strong><small id="quickPredictionDetail">不会在本页执行控制指令</small>
+          </div>
+          <div id="quickGestureGrid" class="quick-gesture-grid"></div>
+          <div class="quick-entry-row"><button id="quickEnterAdvanced" class="primary" disabled>沿用快捷模型进入进阶控制</button><p id="quickAdvancedHint" class="muted"></p></div>
+          <div id="quickActiveReport" class="quick-active-report"></div>
+          <details class="quick-manager" open>
+            <summary>快捷体验模型管理</summary>
+            <p class="muted">来源样本与个人档案分开保存。修改来源数据后先生成候选版本；当前启用的模型不会自动改变。历史测试记录不直接参与训练。</p>
+            <div class="row"><label>选择用户 <select id="quickSourceUser"></select></label>
+              <button id="quickSyncSelected" disabled>加入所选用户最新样本</button><button id="quickSyncAll" disabled>同步全部用户最新样本</button></div>
+            <div id="quickSourceList" class="quick-source-list"></div>
+            <div class="row"><button id="quickBuild" class="primary" disabled>生成并评估候选模型</button><button id="quickPublish" disabled>启用候选模型</button></div>
+            <div id="quickCandidateReport" class="quick-candidate-report"></div>
+            <h3>模型版本与恢复</h3>
+            <div class="row"><label>历史版本 <select id="quickVersionSelect"></select></label>
+              <button id="quickRestoreSelected">恢复所选版本</button><button id="quickRestorePrevious">恢复上一版</button><button id="quickRestoreInitial">恢复初始版本</button>
+              <button id="quickRemoveVersion" class="danger">删除所选旧版本</button></div>
+            <div class="row"><button id="quickExport" disabled>导出快捷模型包</button>
+              <label class="file-btn">导入快捷模型包<input id="quickImport" type="file" accept="application/json,.json" disabled></label></div>
+            <p id="quickStorageInfo" class="muted"></p>
+          </details>
+          <p id="quickMessage" class="quick-message" role="status"></p>
+        </div>
+      </div>
+
+      <div id="tab-eval" class="tab">
+        <p>「留一法」：把每个样本拿出来，用其余样本去识别它。这能估计识别器在<b>这个人</b>身上的准确率，但比真实使用偏乐观（样本都是在提示下做的）。</p>
+        <button id="runEval" class="primary">运行评估</button>
+        <div id="evalResult"></div>
+        <h3>实时测试</h3>
+        <p>在本页做动作，左下「识别记录」会显示识别结果和距离（越小越像），但不会触发任何操作。</p>
+      </div>
+
+      <div id="tab-board" class="tab">
+        <div id="boardGrid" class="board-grid"></div>
+        <div id="boardOutput" class="board-output">—</div>
+        <div class="row">
+          <label><input type="checkbox" id="autoScan"> 自动扫描（只需一个「选择」动作）</label>
+          <label>间隔 <input type="number" id="scanInterval" min="500" max="10000" step="250"> 毫秒</label>
+          <label><input type="checkbox" id="speakOut" checked> 朗读</label>
+        </div>
+        <h4>动作 → 操作</h4>
+        <table class="map-table" id="boardMap"></table>
+        <h4>短语（每行一个）</h4>
+        <textarea id="phrases" rows="6"></textarea>
+      </div>
+
+      <div id="tab-music" class="tab">
+        <div class="track-library">
+          <h3>本机曲目（最多 5 首）</h3>
+          <div class="row">
+            <label class="file-btn">添加音频曲目<input id="trackFiles" type="file" accept="audio/*,.mp3,.wav,.ogg,.m4a,.flac" multiple></label>
+            <button id="openTrackPicker">试用曲目选择弹窗</button>
+            <span id="trackCount" class="muted">尚未添加曲目</span>
+          </div>
+          <p id="currentTrack" class="muted">尚未选择曲目</p>
+          <audio id="trackAudio" controls preload="metadata"></audio>
+          <p class="muted">音频只在本次页面打开期间使用；刷新后请重新添加，不会写入眼动档案。</p>
+        </div>
+        <div class="music-display">
+          <div id="chordNow" class="chord-now">C</div>
+          <div id="beatDots" class="beat-dots"><i></i><i></i><i></i><i></i></div>
+        </div>
+        <div class="row">
+          <button id="musicToggle" class="primary">开始伴奏</button>
+          <label>速度 <input type="range" id="bpm" min="50" max="140"> <span id="bpmValue"></span> BPM</label>
+          <span id="musicVolumeInfo" class="pill muted"></span>
+          <span id="musicEffectInfo" class="pill muted"></span>
+        </div>
+        <div class="row">
+          <label>和弦进行 <input id="chords" size="24"></label>
+        </div>
+        <div class="row">
+          <button id="enableMidi">启用 MIDI 输出</button>
+          <select id="midiSelect" class="hidden"></select>
+          <span id="midiInfo" class="muted">可选：把音符发到 GarageBand / Logic（macOS 需在「音频 MIDI 设置」里启用 IAC 驱动）</span>
+        </div>
+        <p class="hint">所有眼动触发都会对齐到下一个八分音符，所以摄像头的延迟听起来是「落在拍上」而不是「拖拍」。</p>
+        <h4>动作 → 操作</h4>
+        <table class="map-table" id="musicMap"></table>
+      </div>
+
+      <div id="tab-settings" class="tab">
+        <div class="row">
+          <label>用户名称 <input id="profileName" maxlength="20"></label>
+          <button id="exportProfile">导出此用户档案</button>
+          <label class="file-btn">导入档案（作为新用户）<input id="importProfile" type="file" accept="application/json"></label>
+        </div>
+        <div class="row">
+          <button id="resetProfile" class="danger">清空此用户的校准与样本</button>
+          <button id="deleteUser" class="danger">删除此用户</button>
+        </div>
+        <div class="row">
+          <label>计算设备
+            <select id="delegate"><option value="GPU">GPU（默认）</option><option value="CPU">CPU</option></select>
+          </label>
+          <span class="muted">改后需刷新页面</span>
+        </div>
+        <details class="settings-card" open>
+          <summary>档案存储空间</summary>
+          <div class="storage-meter-grid">
+            <div><span>已用空间</span><strong id="storageUsage">正在查询…</strong></div>
+            <div><span>估算剩余</span><strong id="storageRemaining">正在查询…</strong></div>
+            <div><span>浏览器估算配额</span><strong id="storageQuota">正在查询…</strong></div>
+            <div><span>约可再录样本</span><strong id="storageSamplesRemaining">计算中…</strong></div>
+          </div>
+          <p id="storageBackend" class="muted">正在检查档案存储方式…</p>
+          <p class="muted">空间由浏览器按当前网址（含该网址的其他浏览器数据）和磁盘情况动态估算，每 5 秒刷新；剩余样本数按当前用户样本平均大小推算，仅供参考。请定期导出档案备份。</p>
+          <button id="refreshStorage">立即刷新</button>
+        </details>
+        <details class="settings-card" open>
+          <summary>进阶控制识别</summary>
+          <label><input id="gazeDeckUseClosestGuess" type="checkbox"> 允许“未知，最像 XXX”按最像动作执行进阶控制</label>
+          <p class="muted">默认关闭。开启后，仅在「⑦ GazeDeck 进阶控制」中，将拒识结果里的“最像”候选按已绑定动作处理；仍遵守置信度、冷却时间与观察模式规则。此开关按用户保存，不改变模型原始识别结果或已录样本。</p>
+        </details>
+        <details class="settings-card" open>
+          <summary>测试与改进评分</summary>
+          <label><input id="testCountClosestGuess" type="checkbox"> 将“未知，最像实际动作”计为检测成功</label>
+          <p class="muted">默认关闭。仅影响「测试与改进」的成功率及候选样本筛选；实际动作为自然时，“自然”或“未知”始终计为防误触成功。原始识别结果与未知检测次数保持不变。此开关按用户保存，下次开始测试时生效。</p>
+        </details>
+        <details class="settings-card" open>
+          <summary>校准节奏</summary>
+          <div class="row">
+            <label>个性化眼动校准 <select id="personalCalibrationPace">
+              <option value="1">原速（现有用时）</option>
+              <option value="1.5">较慢（用时约 ×1.5）</option>
+              <option value="2">慢速（用时约 ×2）</option>
+              <option value="3">很慢（用时约 ×3）</option>
+            </select></label>
+            <label>视线滑块校准 <select id="sliderCalibrationPace">
+              <option value="1">原速（现有用时）</option>
+              <option value="1.5">较慢（用时约 ×1.5）</option>
+              <option value="2">慢速（用时约 ×2）</option>
+              <option value="3">很慢（用时约 ×3）</option>
+            </select></label>
+          </div>
+          <p class="muted">默认慢速。分别延长开始倒数、注视保持与目标切换间隔；下次开始校准时生效，不改变采样次数、识别参数或已有校准结果。</p>
+        </details>
+        <details class="settings-card" open>
+          <summary>连续滑块控制</summary>
+          <div class="row">
+            <label><input id="gazeSliderEnabled" type="checkbox"> 启用视线滑块</label>
+            <label>保留并关闭（固定） <select id="gazeConfirmGesture" disabled></select></label>
+            <label>恢复打开时原值（固定） <select id="gazeCancelGesture" disabled></select></label>
+          </div>
+          <div class="gaze-settings-grid">
+            <label>停留确认 <input id="gazeDwellMs" type="range" min="100" max="800" step="50"></label><span id="gazeDwellValue"></span>
+            <label>最大调节速度 <input id="gazeMaxRate" type="range" min="10" max="80" step="5"></label><span id="gazeMaxRateValue"></span>
+            <label>中央停止区 <input id="gazeDeadZone" type="range" min="0.15" max="0.5" step="0.01"></label><span id="gazeDeadZoneValue"></span>
+            <label>信号平滑 <input id="gazeSmoothingMs" type="range" min="0" max="500" step="20"></label><span id="gazeSmoothingValue"></span>
+          </div>
+          <p class="muted">所有滑块统一：上看恢复打开时原值、保持弹窗；下看保留当前值并关闭。人脸丢失时暂停调节；Esc 或超时放弃本次调节并关闭。原有确认／取消动作设置不再用于滑块。</p>
+        </details>
+        <details class="settings-card" open>
+          <summary>摄像头画面辅助</summary>
+          <div class="row">
+            <label><input id="faceGuideEnabled" type="checkbox"> 启用脸部位置提示</label>
+            <label><input id="lightingWarningEnabled" type="checkbox"> 启用光线提示</label>
+          </div>
+          <div class="gaze-settings-grid">
+            <label>水平偏移容差 <input id="faceToleranceX" type="range" min="5" max="25" step="1"></label><span id="faceToleranceXValue"></span>
+            <label>眼睛垂直偏移容差 <input id="faceToleranceY" type="range" min="5" max="25" step="1"></label><span id="faceToleranceYValue"></span>
+            <label>脸部最小宽度 <input id="faceMinWidth" type="range" min="15" max="45" step="1"></label><span id="faceMinWidthValue"></span>
+            <label>脸部最大宽度 <input id="faceMaxWidth" type="range" min="50" max="90" step="1"></label><span id="faceMaxWidthValue"></span>
+            <label>脸部最大高度 <input id="faceMaxHeight" type="range" min="55" max="95" step="1"></label><span id="faceMaxHeightValue"></span>
+            <label>过暗阈值 <input id="darkThreshold" type="range" min="5" max="100" step="1"></label><span id="darkThresholdValue"></span>
+            <label>过亮阈值 <input id="brightThreshold" type="range" min="130" max="250" step="1"></label><span id="brightThresholdValue"></span>
+          </div>
+          <p class="muted">位置阈值按画面比例计算；光线阈值是平均亮度（0–255），低于过暗阈值或高于过亮阈值时提醒。仅提供姿势与光线参考，不影响样本或识别结果。</p>
+        </details>
+        <div id="sliders" class="sliders"></div>
+        <div class="row">
+          <button id="restoreParameterDefaults">恢复到共享默认设置</button>
+          <button id="restoreSystemDefaults">恢复到系统默认设置</button>
+          <button id="saveParameterDefaults" class="primary">保存目前数值为共享默认设置</button>
+        </div>
+        <p id="parameterDefaultsInfo" class="muted"></p>
+        <p class="muted">仅作用于校准节奏、连续滑块控制、摄像头画面辅助，以及上方识别与录制参数。共享默认保存在此浏览器中，所有用户均可恢复；新建用户以它作为初始参数，已有用户的当前参数不会被自动覆盖。尚未保存共享默认时，当前用户仍可恢复旧版个人默认；若没有旧版默认，则使用系统初始值。“系统默认”始终使用程序最初的参数，不受手动调节或共享默认影响。不会清空动作样本、校准结果或动作绑定。</p>
+      </div>
+
+      <div id="tab-test" class="tab">
+        <p class="hint">测试过程不会直接修改模型。调优阶段生成候选样本，再用独立确认阶段比较旧模型和候选模型；只有人工点击「应用改进」才会写入训练样本。</p>
+        <div id="testSetup">
+          <h3>选择动作</h3>
+          <div id="testGestureChoices" class="choice-grid"></div>
+          <div class="row">
+            <label>每类次数
+              <select id="testRepeats"><option value="3">快速（3次）</option><option value="5" selected>标准（5次）</option><option value="10">完整（10次）</option></select>
+            </label>
+            <label><input id="testIncludeRest" type="checkbox" checked> 包含「保持自然」负样本</label>
+            <button id="startTuningTest" class="primary">开始调优测试</button>
+          </div>
+        </div>
+
+        <div id="testRunning" class="hidden">
+          <h3 id="testPhaseTitle">调优测试</h3>
+          <div class="test-progress"><div id="testProgressBar"></div></div>
+          <p id="testProgressText"></p>
+          <button id="stopTest" class="danger">停止测试</button>
+        </div>
+
+        <div id="testReview" class="review-card hidden">
+          <h3>请确认本次试验</h3>
+          <p>要求：<b id="testTarget"></b>　模型检测：<b id="testPrediction"></b></p>
+          <p id="testTrialDetail" class="muted"></p>
+          <div class="row">
+            <button id="confirmTrial" class="primary">我已按提示完成</button>
+            <label>实际做的是 <select id="actualGesture"></select></label>
+            <button id="correctTrial">使用纠正标签</button>
+            <button id="invalidateTrial" class="danger">本次作废</button>
+          </div>
+        </div>
+
+        <div id="testResults"></div>
+        <div id="testActions" class="row hidden">
+          <button id="startConfirmationTest" class="primary">开始独立确认测试</button>
+          <button id="applyTestImprovement" class="primary hidden">应用改进</button>
+          <button id="discardTestImprovement">放弃候选改进</button>
+        </div>
+        <div id="testResultActions" class="row hidden">
+          <button id="deleteLatestTestRun" class="danger">删除本轮测试数据</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script type="module" src="src/app.js"></script>
+</body>
+</html>

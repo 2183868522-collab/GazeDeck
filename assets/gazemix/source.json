@@ -1,0 +1,5 @@
+{
+  "source": "眼动混音台-整表框.svg",
+  "layeredSha256": "692fec0d35bc6f6ba0046645c2a18c3da7aee6d1caf4a8234e3eee3a72eb4623",
+  "purpose": "Original SVG outline blocks. Text, real readouts, waveforms and controls remain DOM elements. Debug labels and candidate hitboxes are excluded."
+}
